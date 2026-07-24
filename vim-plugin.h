@@ -598,3 +598,56 @@ void vim_process(EditorCtx* ctx, UIState* state, VimProcessorState* vim_state, c
     }
   }
 }
+
+// Primary hooks to engage vim behavior.
+DEF_PLUGIN_EDITOR_INPUT_HOOK() {
+  // Pull our data.
+  EditorData data = {0};
+  ed_fetch_persistent_data(ctx, &data);
+  VimProcessorState* vim_state = *data.data;
+  EditorCmd cmd = {0};
+
+  String8 txt = os_text_event();
+  os_eat_text_event();
+  for EachIndex(i, txt.size) {
+    vim_process(ctx, state, vim_state, txt.str[i]);
+  }
+
+  if (key_match(OS_KEY_Esc)) {
+    vim_esc(ctx, vim_state);
+  }
+
+  if (key_match(OS_KEY_Backspace)) {
+    if (vim_insert_like(vim_state)) {
+      cmd.cmd = ED_DelBackspaceChar;
+      ed_push_command(ctx, &cmd);
+    }
+  }
+
+  if (key_match(OS_KEY_Delete)) {
+    if (vim_insert_like(vim_state)) {
+      cmd.cmd = ED_DelDeleteChar;
+      ed_push_command(ctx, &cmd);
+    }
+  }
+
+  if (key_match(OS_KEY_Return)) {
+    if (vim_insert_like(vim_state)) {
+      cmd.cmd = ED_InsNewline;
+      ed_push_command(ctx, &cmd);
+    }
+  }
+}
+
+DEF_PLUGIN_EDITOR_INIT_HOOK() {
+  EditorData data = {0};
+  if (from_recompile) {
+    // We don't need to do anything for now.
+  }
+  else {
+    // Create the vim processor state.
+    ed_new_persistent_data(ctx, &data);
+    VimProcessorState* vim_state = push_array(data.arena, VimProcessorState, 1);
+    *data.data = vim_state;
+  }
+}
