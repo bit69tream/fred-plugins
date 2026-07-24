@@ -642,7 +642,12 @@ DEF_PLUGIN_EDITOR_INPUT_HOOK() {
 DEF_PLUGIN_EDITOR_INIT_HOOK() {
   EditorData data = {0};
   if (from_recompile) {
-    // We don't need to do anything for now.
+    ed_fetch_persistent_data(ctx, &data);
+    // If the state has not been created, create it now.
+    if (*data.data == 0) {
+      VimProcessorState* vim_state = push_array(data.arena, VimProcessorState, 1);
+      *data.data = vim_state;
+    }
   }
   else {
     // Create the vim processor state.
