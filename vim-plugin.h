@@ -22,6 +22,10 @@ typedef struct VimProcessorState {
   VimState state;
   VimSubCommand sub_cmd;
   uint32_t repeat;
+  Vec4f default_color;
+  Vec4f ins_color;
+  Vec4f repl_color;
+  Vec4f vis_color;
 } VimProcessorState;
 
 typedef struct VimCmdBufferEntry {
@@ -46,6 +50,32 @@ typedef struct VimCmdBufferList {
 ((l)->next=(n),(l)=(n),SetNil(nil,(n)->next)))
 
 #define SLLQueuePush(f,l,n) SLLQueuePush_NZ(0,f,l,n,next)
+
+void vim_populate_colors(EditorCtx* ctx, VimProcessorState* vim_state) {
+  Temp scratch = scratch_begin(NULL);
+  KeyedConfigValue cfg_value = {0};
+  String8 key = str8_lit("editor.colors.tray");
+  config_query_config_value(scratch.arena, &key, &cfg_value);
+  if (cfg_value.sort == CFG_SORT_Vec4fColor) {
+    vim_state->default_color = cfg_value.value.vec4f;
+  }
+  key = str8_lit("diff.colors.ins");
+  config_query_config_value(scratch.arena, &key, &cfg_value);
+  if (cfg_value.sort == CFG_SORT_Vec4fColor) {
+    vim_state->ins_color = cfg_value.value.vec4f;
+  }
+  key = str8_lit("diff.colors.del");
+  config_query_config_value(scratch.arena, &key, &cfg_value);
+  if (cfg_value.sort == CFG_SORT_Vec4fColor) {
+    vim_state->repl_color = cfg_value.value.vec4f;
+  }
+  key = str8_lit("editor.colors.highlight_line_edit");
+  config_query_config_value(scratch.arena, &key, &cfg_value);
+  if (cfg_value.sort == CFG_SORT_Vec4fColor) {
+    vim_state->vis_color = cfg_value.value.vec4f;
+  }
+  scratch_end(scratch);
+}
 
 // Helpers to insert into vim command buffer.
 void push_vim_cmd_entry(Arena* arena, VimCmdBufferList* lst, EditorCmd* cmd) {
@@ -879,22 +909,92 @@ DEF_PLUGIN_EDITOR_INPUT_HOOK() {
       ed_push_command(ctx, &cmd);
     }
   }
+
+  // Now we can populate the tray info.
+  // We will show the following:
+  // VIM (INS/REPLACE/VISUAL) (repeat #) (subcmd)
+  Temp scratch = scratch_begin(NULL);
+  EditorTextRun run = {0};
+  EditorEquippedText etxt = {0};
+  uint32_t idx = 0;
+
+  run.size += 1; // VIM.
+  if (vim_state->state != VIM_STATE_Command) {
+    run.size += 1;
+  }
+
+  if (vim_state->repeat != 0) {
+    run.size += 1;
+  }
+
+  if (vim_state->sub_cmd != VIM_SUBCMD_None) {
+    run.size += 1;
+  }
+
+  run.array = push_array(scratch.arena, EditorEquippedText, run.size);
+
+  // VIM.
+  etxt.text = str8_lit("VIM");
+  etxt.color = vim_state->default_color;
+  run.array[idx++] = etxt;
+
+  // (INS/REPLACE/VISUAL).
+  etxt.text = str8_lit("");
+  switch (vim_state->state) {
+  case VIM_STATE_Command:
+    break;
+  case VIM_STATE_Insert:
+    etxt.text = str8_lit(" INS");
+    etxt.color = vim_state->ins_color;
+    break;
+  case VIM_STATE_Replace:
+    etxt.text = str8_lit(" REPLACE");
+    etxt.color = vim_state->repl_color;
+    break;
+  case VIM_STATE_Visual:
+    etxt.text = str8_lit(" VISUAL");
+    etxt.color = vim_state->vis_color;
+    break;
+  }
+
+  if (etxt.text.size != 0) {
+    run.array[idx++] = etxt;
+  }
+
+  // (repeat #).
+  if (vim_state->repeat != 0) {
+    etxt.text = str8_fmt(scratch.arena, " (%u)", vim_state->repeat);
+    etxt.color = vim_state->default_color;
+    run.array[idx++] = etxt;
+  }
+
+  // (subcmd).
+  if (vim_state->sub_cmd != VIM_SUBCMD_None) {
+    etxt.text = str8_fmt(scratch.arena, " (%c)", vim_state->sub_cmd);
+    etxt.color = vim_state->default_color;
+    run.array[idx++] = etxt;
+  }
+  ed_populate_user_defined_tray_text(ctx, &run, 0);
+  scratch_end(scratch);
 }
 
 DEF_PLUGIN_EDITOR_INIT_HOOK() {
   EditorData data = {0};
   if (from_recompile) {
     ed_fetch_persistent_data(ctx, &data);
+    VimProcessorState* vim_state = *data.data;
     // If the state has not been created, create it now.
-    if (*data.data == NULL) {
-      VimProcessorState* vim_state = push_array(data.arena, VimProcessorState, 1);
+    if (vim_state == NULL) {
+      vim_state = push_array(data.arena, VimProcessorState, 1);
       *data.data = vim_state;
     }
+    vim_populate_colors(ctx, vim_state);
   }
   else {
     // Create the vim processor state.
     ed_new_persistent_data(ctx, &data);
     VimProcessorState* vim_state = push_array(data.arena, VimProcessorState, 1);
     *data.data = vim_state;
+    vim_populate_colors(ctx, vim_state);
   }
 }
