@@ -26,6 +26,8 @@ typedef struct VimProcessorState {
   Vec4f ins_color;
   Vec4f repl_color;
   Vec4f vis_color;
+  Vec4f cmd_cursor_color;
+  Vec4f ins_cursor_color;
 } VimProcessorState;
 
 typedef struct VimCmdBufferEntry {
@@ -73,6 +75,16 @@ void vim_populate_colors(EditorCtx* ctx, VimProcessorState* vim_state) {
   config_query_config_value(scratch.arena, &key, &cfg_value);
   if (cfg_value.sort == CFG_SORT_Vec4fColor) {
     vim_state->vis_color = cfg_value.value.vec4f;
+  }
+  key = str8_lit("editor.colors.cursor");
+  config_query_config_value(scratch.arena, &key, &cfg_value);
+  if (cfg_value.sort == CFG_SORT_Vec4fColor) {
+    vim_state->ins_cursor_color = cfg_value.value.vec4f;
+  }
+  key = str8_lit("editor.colors.vim_cursor_color");
+  config_query_config_value(scratch.arena, &key, &cfg_value);
+  if (cfg_value.sort == CFG_SORT_Vec4fColor) {
+    vim_state->cmd_cursor_color = cfg_value.value.vec4f;
   }
   scratch_end(scratch);
 }
@@ -975,6 +987,17 @@ DEF_PLUGIN_EDITOR_INPUT_HOOK() {
     run.array[idx++] = etxt;
   }
   ed_populate_user_defined_tray_text(ctx, &run, 0);
+
+  // Add cursor style.
+  EditorCursorStyle style = {0};
+  if (vim_insert_like(vim_state)) {
+    style.color = vim_state->ins_cursor_color;
+  }
+  else {
+    style.color = vim_state->cmd_cursor_color;
+    style.flags = ED_CURSOR_FLG_Embolden;
+  }
+  ed_apply_cursor_style(ctx, &style);
   scratch_end(scratch);
 }
 
