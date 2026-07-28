@@ -950,13 +950,13 @@ DEF_PLUGIN_EDITOR_INPUT_HOOK() {
   etxt.color = vim_state->default_color;
   run.array[idx++] = etxt;
 
-  // (INS/REPLACE/VISUAL).
+  // (INSERT/REPLACE/VISUAL).
   etxt.text = str8_lit("");
   switch (vim_state->state) {
   case VIM_STATE_Command:
     break;
   case VIM_STATE_Insert:
-    etxt.text = str8_lit(" INS");
+    etxt.text = str8_lit(" INSERT");
     etxt.color = vim_state->ins_color;
     break;
   case VIM_STATE_Replace:
