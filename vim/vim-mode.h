@@ -14,6 +14,7 @@ typedef enum VimSubCommand {
   VIM_SUBCMD_d    = 'd',
   VIM_SUBCMD_r    = 'r',
   VIM_SUBCMD_Z    = 'Z',
+  VIM_SUBCMD_z    = 'z',
   VIM_SUBCMD_dg   = '@',
   VIM_SUBCMD_ci   = '`',
 } VimSubCommand;
@@ -229,6 +230,18 @@ void vim_process_vis(EditorCtx* ctx, VimProcessorState* vim_state, char c) {
     cmd.cmd = ED_NavFirstNonemptyOfLine;
     push_vim_cmd_entry(scratch.arena, &cmd_lst, &cmd);
     break;
+  case '_':
+    if (vim_state->repeat > 0)
+    {
+      vim_state->repeat -= 1;
+      cmd.cmd = ED_NavLineDown;
+      push_vim_cmd_entry(scratch.arena, &cmd_lst, &cmd);
+      captured_repeat = 1;
+    }
+
+    cmd.cmd = ED_NavFirstNonemptyOfLine;
+    push_vim_cmd_entry(scratch.arena, &cmd_lst, &cmd);
+    break;
   case '$':
     cmd.cmd = ED_NavEndOfLine;
     push_vim_cmd_entry(scratch.arena, &cmd_lst, &cmd);
@@ -373,7 +386,15 @@ void vim_process_vis(EditorCtx* ctx, VimProcessorState* vim_state, char c) {
   case 'v':
     vim_change_state(vim_state, VIM_STATE_Visual);
     break;
-  }
+  case 'z':
+    if (prev_sub_cmd == VIM_SUBCMD_z) {
+      cmd.cmd = ED_NavCenterCameraCursor;
+      push_vim_cmd_entry(scratch.arena, &cmd_lst, &cmd);
+    } else {
+      vim_state->sub_cmd = VIM_SUBCMD_z;
+    }
+    break;
+}
 
   flush_vim_cmd_list(ctx, vim_state, &cmd_lst);
   // Keep repeats active if we're processing a subcommand or we processed a repeat.
@@ -505,6 +526,18 @@ void vim_process_cmd(EditorCtx* ctx, VimProcessorState* vim_state, char c) {
         cmd.cmd = ED_NavFirstNonemptyOfLine;
         push_vim_cmd_entry(scratch.arena, &cmd_lst, &cmd);
       }
+      break;
+    case '_':
+      if (vim_state->repeat > 0)
+      {
+        vim_state->repeat -= 1;
+        cmd.cmd = ED_NavLineDown;
+        push_vim_cmd_entry(scratch.arena, &cmd_lst, &cmd);
+        captured_repeat = 1;
+      }
+
+      cmd.cmd = ED_NavFirstNonemptyOfLine;
+      push_vim_cmd_entry(scratch.arena, &cmd_lst, &cmd);
       break;
     case '$':
       if (prev_sub_cmd == VIM_SUBCMD_d) {
@@ -795,6 +828,14 @@ void vim_process_cmd(EditorCtx* ctx, VimProcessorState* vim_state, char c) {
       }
       else {
         vim_state->sub_cmd = VIM_SUBCMD_Z;
+      }
+      break;
+    case 'z':
+      if (prev_sub_cmd == VIM_SUBCMD_z) {
+        cmd.cmd = ED_NavCenterCameraCursor;
+        push_vim_cmd_entry(scratch.arena, &cmd_lst, &cmd);
+      } else {
+        vim_state->sub_cmd = VIM_SUBCMD_z;
       }
       break;
     case 'Q':
