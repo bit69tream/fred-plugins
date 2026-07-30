@@ -174,11 +174,13 @@ void vim_visual_line_nav_up_pre_hook(EditorCtx* ctx, VimProcessorState* vim_stat
     // we are on the same line where we started the selection
     cmd.cmd = ED_SelectionClearSelections;
     ed_push_command(ctx, &cmd);
+    cmd.cmd = ED_NavEndOfLine;
+    ed_push_command(ctx, &cmd);
     cmd.flags = ED_FLG_UpdateSelection;
     cmd.cmd = ED_NavBeginningOfLine;
     ed_push_command(ctx, &cmd);
   }
-  
+
   vim_state->line_distance_to_selection_start --;
 }
 
@@ -195,11 +197,13 @@ void vim_visual_line_nav_down_post_hook(EditorCtx* ctx, VimProcessorState* vim_s
     // we just moved to the same line where we started the selection
     cmd.cmd = ED_SelectionClearSelections;
     ed_push_command(ctx, &cmd);
+    cmd.cmd = ED_NavBeginningOfLine;
+    ed_push_command(ctx, &cmd);
     cmd.flags = ED_FLG_UpdateSelection;
     cmd.cmd = ED_NavEndOfLine;
-    ed_push_command(ctx, &cmd); 
+    ed_push_command(ctx, &cmd);
   }
-  
+
   vim_state->line_distance_to_selection_start ++;
 }
 
@@ -457,7 +461,10 @@ void vim_process_vis(EditorCtx* ctx, VimProcessorState* vim_state, char c) {
     vim_change_state(vim_state, VIM_STATE_Visual);
     break;
   case 'V':
-    // TODO: select all lines from the selected range
+    // TODO: select all lines from the selected range.
+    //       we could track `j` and `k` movements now and just fully re-select those lines, but
+    //       currently we have no way to track if the user moved up/down with `h` and `l` commands.
+    //       this can be addressed with future API updates.
     vim_state->visual_line_mode = 1;
     break;
   case 'z':
@@ -949,6 +956,7 @@ void vim_process(EditorCtx* ctx, UIState* state, VimProcessorState* vim_state, c
   uint32_t processed = 0;
   if (mod_active(OS_KEY_MOD_Ctrl)) {
     if (vim_state->state == VIM_STATE_Visual) {
+        // TODO: these do not take visual line mode into account
         switch (c) {
         case 'd':
           cmd.cmd = ED_NavPageDown;
