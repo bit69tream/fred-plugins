@@ -164,12 +164,7 @@ void vim_esc(EditorCtx* ctx, VimProcessorState* vim_state) {
 void vim_visual_line_nav_up_pre_hook(EditorCtx* ctx, VimProcessorState* vim_state) {
   EditorCmd cmd = {0};
 
-  if (!vim_state->visual_line_mode)
-  {
-    return;
-  }
-
-  if (vim_state->line_distance_to_selection_start == 0)
+  if (vim_state->line_distance_to_selection_start == 0 && vim_state->visual_line_mode)
   {
     // we are on the same line where we started the selection
     cmd.cmd = ED_SelectionClearSelections;
@@ -187,12 +182,7 @@ void vim_visual_line_nav_up_pre_hook(EditorCtx* ctx, VimProcessorState* vim_stat
 void vim_visual_line_nav_down_post_hook(EditorCtx* ctx, VimProcessorState* vim_state) {
   EditorCmd cmd = {0};
 
-  if (!vim_state->visual_line_mode)
-  {
-    return;
-  }
-
-  if (vim_state->line_distance_to_selection_start == -1)
+  if (vim_state->line_distance_to_selection_start == -1 && vim_state->visual_line_mode)
   {
     // we just moved to the same line where we started the selection
     cmd.cmd = ED_SelectionClearSelections;
@@ -903,6 +893,7 @@ void vim_process_cmd(EditorCtx* ctx, VimProcessorState* vim_state, char c) {
     // Visual mode engage!
     case 'v':
       vim_change_state(vim_state, VIM_STATE_Visual);
+      vim_state->line_distance_to_selection_start = 0;
       break;
     case 'V':
       vim_change_state(vim_state, VIM_STATE_Visual);
