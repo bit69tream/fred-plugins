@@ -158,13 +158,14 @@ int current_cursor_offset(Arena* a, EditorCtx* ctx, uint64_t* out_offset) {
   return 1;
 }
 
-void vim_visual_line_mode_update_selection(Arena* a, EditorCtx* ctx, VimProcessorState* vim_state) {
+void vim_visual_line_mode_update_selection(EditorCtx* ctx, VimProcessorState* vim_state) {
   uint64_t current_offset = 0;
   int64_t origin_line = 0;
   int64_t current_line = 0;
   EditorCmd cmd = {0};
+  Temp scratch = scratch_begin(NULL);
 
-  if (!current_cursor_offset(a, ctx, &current_offset))
+  if (!current_cursor_offset(scratch.arena, ctx, &current_offset))
   {
     return;
   }
@@ -192,6 +193,8 @@ void vim_visual_line_mode_update_selection(Arena* a, EditorCtx* ctx, VimProcesso
 
   cmd.cmd = !at_or_below_origin_line ? ED_NavBeginningOfLine : ED_NavEndOfLine;
   ed_push_command(ctx, &cmd);
+
+  scratch_end(scratch);
 }
 
 void vim_process_vis(EditorCtx* ctx, VimProcessorState* vim_state, char c) {
@@ -1008,9 +1011,7 @@ void vim_process(EditorCtx* ctx, UIState* state, VimProcessorState* vim_state, c
 
   if (vim_state->visual_line_mode)
   {
-    Temp scratch = scratch_begin(NULL);
-    vim_visual_line_mode_update_selection(scratch.arena, ctx, vim_state);
-    scratch_end(scratch);
+    vim_visual_line_mode_update_selection(ctx, vim_state);
   }
 }
 
