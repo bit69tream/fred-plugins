@@ -22,6 +22,8 @@ typedef enum VimSubCommand {
 typedef struct VimProcessorState {
   VimState state;
   VimSubCommand sub_cmd;
+  uint32_t visual_line_mode;  // we don't want to reimplement visual mode twice, so it's just a flag
+  uint64_t visual_line_mode_origin_offset;
   uint32_t repeat;
   Vec4f default_color;
   Vec4f ins_color;
@@ -141,6 +143,55 @@ void vim_esc(EditorCtx* ctx, VimProcessorState* vim_state) {
   vim_change_state(vim_state, VIM_STATE_Default);
   vim_state->sub_cmd = VIM_SUBCMD_None;
   vim_state->repeat = 0;
+  vim_state->visual_line_mode = 0;
+  vim_state->visual_line_mode_origin_offset = 0;
+}
+
+// Returns false if there is more than one cursor
+int current_cursor_offset(Arena* a, EditorCtx* ctx, uint64_t* out_offset) {
+  EditorCursorArray cursors = {0};
+
+  ed_cursor_ranges(a, ctx, &cursors);
+  if (cursors.size != 1) return 0;
+
+  *out_offset = cursors.array[0].cursor_off;
+  return 1;
+}
+
+void vim_visual_line_mode_update_selection(Arena* a, EditorCtx* ctx, VimProcessorState* vim_state) {
+  uint64_t current_offset = 0;
+  int64_t origin_line = 0;
+  int64_t current_line = 0;
+  EditorCmd cmd = {0};
+
+  if (!current_cursor_offset(a, ctx, &current_offset))
+  {
+    return;
+  }
+
+  origin_line  = ed_line_at_offset(ctx, vim_state->visual_line_mode_origin_offset);
+  current_line = ed_line_at_offset(ctx, current_offset);
+
+  cmd.cmd = ED_SelectionClearSelections;
+  ed_push_command(ctx, &cmd);
+
+  int at_or_below_origin_line = (current_line - origin_line) >= 0;
+
+  cmd.cmd = ED_NavMoveCursorTo;
+  cmd.byte_offsets.array = &vim_state->visual_line_mode_origin_offset;
+  cmd.byte_offsets.size = 1;
+  ed_push_command(ctx, &cmd);
+
+  cmd.cmd = at_or_below_origin_line ? ED_NavBeginningOfLine : ED_NavEndOfLine;
+  ed_push_command(ctx, &cmd);
+
+  cmd.cmd = ED_NavMoveCursorTo;
+  cmd.flags = ED_FLG_UpdateSelection;
+  cmd.byte_offsets.array = &current_offset;
+  ed_push_command(ctx, &cmd);
+
+  cmd.cmd = !at_or_below_origin_line ? ED_NavBeginningOfLine : ED_NavEndOfLine;
+  ed_push_command(ctx, &cmd);
 }
 
 void vim_process_vis(EditorCtx* ctx, VimProcessorState* vim_state, char c) {
@@ -152,6 +203,8 @@ void vim_process_vis(EditorCtx* ctx, VimProcessorState* vim_state, char c) {
   VimSubCommand prev_sub_cmd = vim_state->sub_cmd;
   cmd.flags |= ED_FLG_UpdateSelection;
   vim_state->sub_cmd = VIM_SUBCMD_None;
+
+  uint64_t cursor_offset = 0;
 
   // Command processing.
   switch (c) {
@@ -173,6 +226,10 @@ void vim_process_vis(EditorCtx* ctx, VimProcessorState* vim_state, char c) {
     break;
   // Movement.
   case 'h':
+    if (vim_state->visual_line_mode)
+    {
+      break;
+    }
     cmd.cmd = ED_NavLeft;
     push_vim_cmd_entry(scratch.arena, &cmd_lst, &cmd);
     break;
@@ -185,6 +242,9 @@ void vim_process_vis(EditorCtx* ctx, VimProcessorState* vim_state, char c) {
     push_vim_cmd_entry(scratch.arena, &cmd_lst, &cmd);
     break;
   case 'l':
+    if (vim_state->visual_line_mode) {
+      break;
+    }
     cmd.cmd = ED_NavRight;
     push_vim_cmd_entry(scratch.arena, &cmd_lst, &cmd);
     break;
@@ -386,6 +446,17 @@ void vim_process_vis(EditorCtx* ctx, VimProcessorState* vim_state, char c) {
   case 'v':
     vim_change_state(vim_state, VIM_STATE_Visual);
     break;
+  case 'V':
+    if (!current_cursor_offset(scratch.arena, ctx, &cursor_offset))
+    {
+      String8 msg = str8_lit("Multiple cursors are not supported in VISUAL LINE mode!");
+      feed_queue_warning(msg);
+      break;
+    }
+
+    vim_state->visual_line_mode = 1;
+    vim_state->visual_line_mode_origin_offset = cursor_offset;
+    break;
   case 'z':
     if (prev_sub_cmd == VIM_SUBCMD_z) {
       cmd.cmd = ED_NavCenterCameraCursor;
@@ -412,6 +483,8 @@ void vim_process_cmd(EditorCtx* ctx, VimProcessorState* vim_state, char c) {
   // Preemptively clear the subcommand.
   VimSubCommand prev_sub_cmd = vim_state->sub_cmd;
   vim_state->sub_cmd = VIM_SUBCMD_None;
+
+  uint64_t cursor_offset = 0;
 
   // Process subcommands which take priority.
   if (prev_sub_cmd == VIM_SUBCMD_r) {
@@ -818,6 +891,19 @@ void vim_process_cmd(EditorCtx* ctx, VimProcessorState* vim_state, char c) {
     case 'v':
       vim_change_state(vim_state, VIM_STATE_Visual);
       break;
+    case 'V':
+      if (!current_cursor_offset(scratch.arena, ctx, &cursor_offset))
+      {
+        String8 msg = str8_lit("Multiple cursors are not supported in VISUAL LINE mode!");
+        feed_queue_warning(msg);
+        break;
+      }
+
+      vim_change_state(vim_state, VIM_STATE_Visual);
+      vim_state->visual_line_mode = 1;
+      vim_state->visual_line_mode_origin_offset = cursor_offset;
+
+      break;
     // Closing.
     case 'Z':
       if (prev_sub_cmd == VIM_SUBCMD_Z) {
@@ -922,6 +1008,13 @@ void vim_process(EditorCtx* ctx, UIState* state, VimProcessorState* vim_state, c
       break;
     }
   }
+
+  if (vim_state->visual_line_mode)
+  {
+    Temp scratch = scratch_begin(NULL);
+    vim_visual_line_mode_update_selection(scratch.arena, ctx, vim_state);
+    scratch_end(scratch);
+  }
 }
 
 // Primary hooks to engage vim behavior.
@@ -1005,7 +1098,11 @@ DEF_PLUGIN_EDITOR_INPUT_HOOK() {
     etxt.color = vim_state->repl_color;
     break;
   case VIM_STATE_Visual:
-    etxt.text = str8_lit(" VISUAL");
+    if (vim_state->visual_line_mode != 0) {
+      etxt.text = str8_lit(" VISUAL LINE");
+    } else {
+      etxt.text = str8_lit(" VISUAL");
+    }
     etxt.color = vim_state->vis_color;
     break;
   }
