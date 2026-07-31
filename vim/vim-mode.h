@@ -204,8 +204,6 @@ void vim_process_vis(EditorCtx* ctx, VimProcessorState* vim_state, char c) {
   cmd.flags |= ED_FLG_UpdateSelection;
   vim_state->sub_cmd = VIM_SUBCMD_None;
 
-  uint64_t cursor_offset = 0;
-
   // Command processing.
   switch (c) {
   // Capture repeats.
@@ -447,15 +445,7 @@ void vim_process_vis(EditorCtx* ctx, VimProcessorState* vim_state, char c) {
     vim_change_state(vim_state, VIM_STATE_Visual);
     break;
   case 'V':
-    if (!current_cursor_offset(scratch.arena, ctx, &cursor_offset))
-    {
-      String8 msg = str8_lit("Multiple cursors are not supported in VISUAL LINE mode!");
-      feed_queue_warning(msg);
-      break;
-    }
-
     vim_state->visual_line_mode = 1;
-    vim_state->visual_line_mode_origin_offset = cursor_offset;
     break;
   case 'z':
     if (prev_sub_cmd == VIM_SUBCMD_z) {
@@ -890,6 +880,13 @@ void vim_process_cmd(EditorCtx* ctx, VimProcessorState* vim_state, char c) {
     // Visual mode engage!
     case 'v':
       vim_change_state(vim_state, VIM_STATE_Visual);
+      if (!current_cursor_offset(scratch.arena, ctx, &cursor_offset))
+      {
+        String8 msg = str8_lit("Multiple cursors are not supported in VISUAL mode!");
+        feed_queue_warning(msg);
+        break;
+      }
+      vim_state->visual_line_mode_origin_offset = cursor_offset;
       break;
     case 'V':
       if (!current_cursor_offset(scratch.arena, ctx, &cursor_offset))
